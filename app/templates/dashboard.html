@@ -1,0 +1,184 @@
+<!-- app/templates/dashboard.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard</title>
+    <!-- UIKit CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.16.6/dist/css/uikit.min.css" />
+</head>
+<body>
+
+<div class="uk-container uk-margin-top">
+    <h2 class="uk-heading-line uk-text-center"><span>Welcome, {{ user.full_name or user.username }}</span></h2>
+    <p class="uk-text-center">This is the admin dashboard.</p>
+
+    <!-- User and Group Counts -->
+    <div class="uk-grid-small uk-child-width-expand@s uk-text-center" uk-grid>
+        <div>
+            <div class="uk-card uk-card-default uk-card-body">
+                <h3>Total Users</h3>
+                <p>{{ total_users }}</p>
+            </div>
+        </div>
+        <div>
+            <div class="uk-card uk-card-default uk-card-body">
+                <h3>Administrators</h3>
+                <p>{{ admin_group_count }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- List of Users -->
+    <h3 class="uk-heading-bullet uk-margin-top">List of Users</h3>
+    <table class="uk-table uk-table-divider uk-table-hover">
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Email</th>
+                <th>Full Name</th>
+                <th>Groups</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td>{{ user.username }}</td>
+                <td>{{ user.email or "N/A" }}</td>
+                <td>{{ user.full_name }}</td>
+                <td>
+                    {% for group in user.groups %}
+                        <span class="uk-label">{{ group.name }}
+                            <a href="#" onclick="removeUserFromGroup('{{ user.username }}', '{{ group.name }}')">
+                                <span uk-icon="icon: close; ratio: 0.8"></span>
+                            </a>
+                        </span>
+                    {% else %}
+                        <span class="uk-text-muted">No Groups</span>
+                    {% endfor %}
+                    <!-- Add to Group -->
+                    <form action="/admin/add_user_to_group" method="post" class="uk-margin-small-top">
+                        <input type="hidden" name="username" value="{{ user.username }}">
+                        <div class="uk-inline">
+                            <select class="uk-select" name="group_name" required>
+                                <option value="" disabled selected>Add to Group</option>
+                                {% for group in groups %}
+                                    {% if group.name not in user.groups|map(attribute='name') %}
+                                    <option value="{{ group.name }}">{{ group.name }}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                            <button type="submit" class="uk-button uk-button-small uk-button-secondary">Add</button>
+                        </div>
+                    </form>
+                </td>
+                <td>
+                    <!-- Edit Full Name Form -->
+                    <form action="/admin/edit_user" method="post" class="uk-margin-small">
+                        <input type="hidden" name="username" value="{{ user.username }}">
+                        <div class="uk-inline">
+                            <input class="uk-input uk-form-width-medium" type="text" name="full_name" value="{{ user.full_name }}" placeholder="Edit Full Name">
+                            <button type="submit" class="uk-button uk-button-primary uk-button-small">Save</button>
+                        </div>
+                    </form>
+                    <!-- Delete User Form -->
+                    <form action="/admin/delete_user" method="post" class="uk-margin-small-top" onsubmit="return confirm('Are you sure you want to delete this user?');">
+                        <input type="hidden" name="username" value="{{ user.username }}">
+                        <button type="submit" class="uk-button uk-button-danger uk-button-small">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Group Management -->
+    <h3 class="uk-heading-bullet uk-margin-top">Group Management</h3>
+
+    <!-- Create New Group -->
+    <form action="/admin/create_group" method="post" class="uk-margin-bottom">
+        <div class="uk-inline">
+            <input class="uk-input uk-form-width-medium" type="text" name="group_name" placeholder="New Group Name" required>
+            <button type="submit" class="uk-button uk-button-secondary">Create Group</button>
+        </div>
+    </form>
+
+    <!-- List of Groups -->
+    <div class="uk-child-width-1-3@m uk-grid-small uk-grid-match" uk-grid>
+        {% for group in groups %}
+        <div>
+            <div class="uk-card uk-card-default uk-card-body">
+                <h4 class="uk-card-title">{{ group.name }}</h4>
+                <p>Members: {{ group.users|length }}</p>
+                <form action="/admin/rename_group" method="post" class="uk-margin-small">
+                    <input type="hidden" name="group_id" value="{{ group.id }}">
+                    <div class="uk-inline">
+                        <input class="uk-input uk-form-width-medium" type="text" name="new_name" value="{{ group.name }}" placeholder="Rename Group">
+                        <button type="submit" class="uk-button uk-button-primary uk-button-small">Rename</button>
+                    </div>
+                </form>
+                <button class="uk-button uk-button-danger uk-button-small" onclick="deleteGroup('{{ group.name }}')">Delete Group</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Register New User Button -->
+    <a href="/register" class="uk-button uk-button-primary uk-margin-top">Register New User</a>
+
+    <!-- Logout Form -->
+    <form action="/logout" method="post" class="uk-margin-top">
+        <button type="submit" class="uk-button uk-button-danger">Logout</button>
+    </form>
+</div>
+
+<!-- UIKit JS -->
+<script src="https://cdn.jsdelivr.net/npm/uikit@3.16.6/dist/js/uikit.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/uikit@3.16.6/dist/js/uikit-icons.min.js"></script>
+
+<!-- AJAX for Real-Time Updates -->
+<script>
+    function deleteGroup(groupName) {
+        if (confirm(`Are you sure you want to delete the group: ${groupName}?`)) {
+            fetch(`/admin/delete_group`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ name: groupName })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    UIkit.notification({message: 'Group deleted successfully!', status: 'success'});
+                    location.reload();  // Reload the page to update groups
+                } else {
+                    UIkit.notification({message: 'Failed to delete group: ' + data.error, status: 'danger'});
+                }
+            });
+        }
+    }
+
+    function removeUserFromGroup(username, groupName) {
+        if (confirm(`Remove ${username} from group ${groupName}?`)) {
+            fetch(`/admin/remove_user_from_group`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ username: username, group_name: groupName })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    UIkit.notification({message: 'User removed from group successfully!', status: 'success'});
+                    location.reload();  // Reload the page to update
+                } else {
+                    UIkit.notification({message: 'Failed to remove user from group: ' + data.error, status: 'danger'});
+                }
+            });
+        }
+    }
+</script>
+</body>
+</html>
