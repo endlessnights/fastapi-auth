@@ -4,16 +4,34 @@
 <head>
     <title>Admin Dashboard</title>
     <!-- UIKit CSS -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.16.6/dist/css/uikit.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.16.6/dist/css/uikit.min.css"/>
 </head>
 <body>
+<!-- Header Menu -->
+<nav class="uk-navbar-container" uk-navbar>
+    <div class="uk-navbar-left" style="padding:0 0 0 30px">
+        <a href="/admin/dashboard" class="uk-navbar-item uk-logo">Admin Dashboard</a>
+    </div>
+    <div class="uk-navbar-right">
+        <ul class="uk-navbar-nav">
+            <li>
+                <a href="/admin/dashboard">{{ user.full_name or user.username }}</a>
+            </li>
+            <li>
+                <form action="/logout" method="post" style="display: inline;">
+                    <button type="submit" class="uk-button uk-button-link">Logout</button>
+                </form>
+            </li>
+        </ul>
+    </div>
+</nav>
 
-<div class="uk-container uk-margin-top">
+<div class="uk-container-expand uk-margin-top">
     <h2 class="uk-heading-line uk-text-center"><span>Welcome, {{ user.full_name or user.username }}</span></h2>
-    <p class="uk-text-center">This is the admin dashboard.</p>
+    <p class="uk-text-center">{{ dashboard_text }}</p>
 
     <!-- User and Group Counts -->
-    <div class="uk-grid-small uk-child-width-expand@s uk-text-center" uk-grid>
+    <div class="uk-grid-small uk-child-width-expand@s uk-text-center" uk-grid style="padding:0 50px 50px 50px">
         <div>
             <div class="uk-card uk-card-default uk-card-body">
                 <h3>Total Users</h3>
@@ -27,11 +45,13 @@
             </div>
         </div>
     </div>
-
-    <!-- List of Users -->
-    <h3 class="uk-heading-bullet uk-margin-top">List of Users</h3>
-    <table class="uk-table uk-table-divider uk-table-hover">
-        <thead>
+    <div style="padding-left:150px;">
+        <!-- List of Users -->
+        <h3 class="uk-heading-bullet uk-margin-top">List of Users</h3>
+        <!-- Register New User Button -->
+        <a href="/register" class="uk-button uk-button-primary uk-margin-bottom">Add user</a>
+        <table class="uk-table uk-table-divider uk-table-hover">
+            <thead>
             <tr>
                 <th>Username</th>
                 <th>Email</th>
@@ -39,8 +59,8 @@
                 <th>Groups</th>
                 <th>Actions</th>
             </tr>
-        </thead>
-        <tbody>
+            </thead>
+            <tbody>
             {% for user in users %}
             <tr>
                 <td>{{ user.username }}</td>
@@ -48,13 +68,13 @@
                 <td>{{ user.full_name }}</td>
                 <td>
                     {% for group in user.groups %}
-                        <span class="uk-label">{{ group.name }}
+                    <span class="uk-label">{{ group.name }}
                             <a href="#" onclick="removeUserFromGroup('{{ user.username }}', '{{ group.name }}')">
                                 <span uk-icon="icon: close; ratio: 0.8"></span>
                             </a>
                         </span>
                     {% else %}
-                        <span class="uk-text-muted">No Groups</span>
+                    <span class="uk-text-muted">No Groups</span>
                     {% endfor %}
                     <!-- Add to Group -->
                     <form action="/admin/add_user_to_group" method="post" class="uk-margin-small-top">
@@ -63,9 +83,9 @@
                             <select class="uk-select" name="group_name" required>
                                 <option value="" disabled selected>Add to Group</option>
                                 {% for group in groups %}
-                                    {% if group.name not in user.groups|map(attribute='name') %}
-                                    <option value="{{ group.name }}">{{ group.name }}</option>
-                                    {% endif %}
+                                {% if group.name not in user.groups|map(attribute='name') %}
+                                <option value="{{ group.name }}">{{ group.name }}</option>
+                                {% endif %}
                                 {% endfor %}
                             </select>
                             <button type="submit" class="uk-button uk-button-small uk-button-secondary">Add</button>
@@ -77,59 +97,106 @@
                     <form action="/admin/edit_user" method="post" class="uk-margin-small">
                         <input type="hidden" name="username" value="{{ user.username }}">
                         <div class="uk-inline">
-                            <input class="uk-input uk-form-width-medium" type="text" name="full_name" value="{{ user.full_name }}" placeholder="Edit Full Name">
+                            <input class="uk-input uk-form-width-medium" type="text" name="full_name"
+                                   value="{{ user.full_name }}" placeholder="Edit Full Name">
                             <button type="submit" class="uk-button uk-button-primary uk-button-small">Save</button>
                         </div>
                     </form>
                     <!-- Delete User Form -->
-                    <form action="/admin/delete_user" method="post" class="uk-margin-small-top" onsubmit="return confirm('Are you sure you want to delete this user?');">
+                    <form action="/admin/delete_user" method="post" class="uk-margin-small-top"
+                          onsubmit="return confirm('Are you sure you want to delete this user?');">
                         <input type="hidden" name="username" value="{{ user.username }}">
                         <button type="submit" class="uk-button uk-button-danger uk-button-small">Delete</button>
                     </form>
+                    <!-- Change Password Button -->
+                    <button class="uk-button uk-button-secondary uk-button-small"
+                            onclick="openPasswordModal({{ user.id }}, '{{ user.username }}')">Change Password
+                    </button>
                 </td>
             </tr>
             {% endfor %}
-        </tbody>
-    </table>
+            </tbody>
+        </table>
+    </div>
+    <!-- Pagination Controls -->
+    <ul class="uk-pagination uk-flex-center uk-margin">
+        {% if page > 1 %}
+        <li><a href="/admin/dashboard?page={{ page - 1 }}"><span uk-pagination-previous></span></a></li>
+        {% else %}
+        <li class="uk-disabled"><span uk-pagination-previous></span></li>
+        {% endif %}
 
-    <!-- Group Management -->
-    <h3 class="uk-heading-bullet uk-margin-top">Group Management</h3>
-
-    <!-- Create New Group -->
-    <form action="/admin/create_group" method="post" class="uk-margin-bottom">
-        <div class="uk-inline">
-            <input class="uk-input uk-form-width-medium" type="text" name="group_name" placeholder="New Group Name" required>
-            <button type="submit" class="uk-button uk-button-secondary">Create Group</button>
-        </div>
-    </form>
-
-    <!-- List of Groups -->
-    <div class="uk-child-width-1-3@m uk-grid-small uk-grid-match" uk-grid>
-        {% for group in groups %}
-        <div>
-            <div class="uk-card uk-card-default uk-card-body">
-                <h4 class="uk-card-title">{{ group.name }}</h4>
-                <p>Members: {{ group.users|length }}</p>
-                <form action="/admin/rename_group" method="post" class="uk-margin-small">
-                    <input type="hidden" name="group_id" value="{{ group.id }}">
-                    <div class="uk-inline">
-                        <input class="uk-input uk-form-width-medium" type="text" name="new_name" value="{{ group.name }}" placeholder="Rename Group">
-                        <button type="submit" class="uk-button uk-button-primary uk-button-small">Rename</button>
-                    </div>
-                </form>
-                <button class="uk-button uk-button-danger uk-button-small" onclick="deleteGroup('{{ group.name }}')">Delete Group</button>
-            </div>
-        </div>
+        {% for p in range(1, total_pages + 1) %}
+        {% if p == page %}
+        <li class="uk-active"><span>{{ p }}</span></li>
+        {% else %}
+        <li><a href="/admin/dashboard?page={{ p }}">{{ p }}</a></li>
+        {% endif %}
         {% endfor %}
+
+        {% if page < total_pages %}
+        <li><a href="/admin/dashboard?page={{ page + 1 }}"><span uk-pagination-next></span></a></li>
+        {% else %}
+        <li class="uk-disabled"><span uk-pagination-next></span></li>
+        {% endif %}
+    </ul>
+
+    <div style="padding-left:150px;padding-bottom: 50px;">
+        <!-- Group Management -->
+        <h3 class="uk-heading-bullet uk-margin-top">Group Management</h3>
+
+        <!-- Create New Group -->
+        <form action="/admin/create_group" method="post" class="uk-margin-bottom">
+            <div class="uk-inline">
+                <input class="uk-input uk-form-width-medium" type="text" name="group_name" placeholder="New Group Name"
+                       required>
+                <button type="submit" class="uk-button uk-button-secondary">Create Group</button>
+            </div>
+        </form>
+
+        <!-- List of Groups -->
+        <div class="uk-child-width-1-3@m uk-grid-small uk-grid-match" uk-grid>
+            {% for group in groups %}
+            <div>
+                <div class="uk-card uk-card-default uk-card-body">
+                    <h4 class="uk-card-title">{{ group.name }}</h4>
+                    <p>Members: {{ group.users|length }}</p>
+                    <form action="/admin/rename_group" method="post" class="uk-margin-small">
+                        <input type="hidden" name="group_id" value="{{ group.id }}">
+                        <div class="uk-inline">
+                            <input class="uk-input uk-form-width-medium" type="text" name="new_name"
+                                   value="{{ group.name }}" placeholder="Rename Group">
+                            <button type="submit" class="uk-button uk-button-primary uk-button-small">Rename</button>
+                        </div>
+                    </form>
+                    <button class="uk-button uk-button-danger uk-button-small"
+                            onclick="deleteGroup('{{ group.name }}')">
+                        Delete Group
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
     </div>
 
-    <!-- Register New User Button -->
-    <a href="/register" class="uk-button uk-button-primary uk-margin-top">Register New User</a>
-
-    <!-- Logout Form -->
-    <form action="/logout" method="post" class="uk-margin-top">
-        <button type="submit" class="uk-button uk-button-danger">Logout</button>
-    </form>
+    <!-- Password Change Modal -->
+    <div id="password-modal" uk-modal>
+        <div class="uk-modal-dialog uk-modal-body">
+            <button class="uk-modal-close-default" type="button" uk-close></button>
+            <h2 class="uk-modal-title">Change Password for <span id="password-modal-username"></span></h2>
+            <form id="change-password-form">
+                <input type="hidden" id="password-modal-user-id" name="user_id" value="">
+                <div class="uk-margin">
+                    <label class="uk-form-label" for="new_password">New Password:</label>
+                    <div class="uk-form-controls">
+                        <input class="uk-input" id="new_password" name="new_password" type="password"
+                               placeholder="Enter new password" required>
+                    </div>
+                </div>
+                <button type="submit" class="uk-button uk-button-primary">Change Password</button>
+            </form>
+        </div>
+    </div>
 </div>
 
 <!-- UIKit JS -->
@@ -180,5 +247,51 @@
         }
     }
 </script>
+<script>
+    // Function to open the password change modal
+    function openPasswordModal(userId, username) {
+        // Set the username in the modal title
+        document.getElementById('password-modal-username').innerText = username;
+        // Set the user ID in the hidden input
+        document.getElementById('password-modal-user-id').value = userId;
+        // Show the modal
+        UIkit.modal('#password-modal').show();
+    }
+
+    // Handle password change form submission
+    document.getElementById('change-password-form').addEventListener('submit', function(event) {
+        event.preventDefault();
+        const userId = document.getElementById('password-modal-user-id').value;
+        const newPassword = document.getElementById('new_password').value;
+
+        fetch('/admin/change_user_password', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': '{{ csrf_token }}'  // Implement CSRF protection
+            },
+            body: JSON.stringify({
+                user_id: userId,
+                new_password: newPassword
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                UIkit.notification({message: 'Password changed successfully!', status: 'success'});
+                UIkit.modal('#password-modal').hide();
+                // Optionally, clear the password field
+                document.getElementById('new_password').value = '';
+            } else {
+                UIkit.notification({message: 'Failed to change password: ' + data.error, status: 'danger'});
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            UIkit.notification({message: 'An error occurred.', status: 'danger'});
+        });
+    });
+</script>
+
 </body>
 </html>

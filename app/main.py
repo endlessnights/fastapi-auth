@@ -2,11 +2,15 @@
 
 import os
 import logging
+from math import ceil
+
 from fastapi import FastAPI, Depends, HTTPException, status, Request, Form, Body
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from jose import JWTError, jwt
 from datetime import timedelta
+
+from pydantic import BaseModel
 from tortoise import Tortoise
 from tortoise.exceptions import DoesNotExist
 from contextlib import asynccontextmanager
@@ -19,7 +23,7 @@ from app.config import (
     REGISTRATION_ENABLED,
     ACCESS_TOKEN_EXPIRE_MINUTES,
     DB_URL,
-    EMAIL_AUTH_ENABLED,
+    EMAIL_AUTH_ENABLED, USERS_PER_PAGE,
 )
 
 # Configure logging
@@ -188,15 +192,23 @@ async def is_administrator(user: models.User):
 
 # Admin dashboard
 @app.get("/admin/dashboard", response_class=HTMLResponse)
-async def admin_dashboard(request: Request, current_user: models.User = Depends(get_current_user)):
-    logger.info(f"Fetching all users for admin: {current_user.username}")
+async def admin_dashboard(
+        request: Request,
+        page: int = 1,
+        current_user: models.User = Depends(get_current_user)):
+    logger.info(f"Fetching users for admin: {current_user.username} on page {page}")
 
     # Check if current_user is in "administrators" group
     is_admin = await is_administrator(current_user)
 
-    # Fetch all users
-    users = await models.User.all().prefetch_related("groups").order_by("username")
-    logger.info(f"Number of users fetched: {len(users)}")
+    # Total number of users
+    total_users = await models.User.all().count()
+
+    # Calculate total pages
+    total_pages = ceil(total_users / USERS_PER_PAGE)
+
+    # Fetch users for the current page
+    users = await models.User.all().prefetch_related("groups").order_by("username").offset((page - 1) * USERS_PER_PAGE).limit(USERS_PER_PAGE)
 
     # Fetch all groups
     groups = await models.Group.all().prefetch_related("users")
@@ -204,11 +216,11 @@ async def admin_dashboard(request: Request, current_user: models.User = Depends(
     # Count of users in each group
     group_user_counts = {group.name: len(await group.users.all()) for group in groups}
 
-    # Total user count
-    total_users = len(users)
-
     # Count of users in "administrators" group
     admin_group_count = group_user_counts.get("administrators", 0)
+
+    # Get the customizable dashboard text from envs
+    DASHBOARD_TEXT = os.getenv("DASHBOARD_TEXT", "This is the admin dashboard.")
 
     # Pass data to template
     return templates.TemplateResponse("dashboard.html", {
@@ -220,6 +232,10 @@ async def admin_dashboard(request: Request, current_user: models.User = Depends(
         "total_users": total_users,
         "admin_group_count": admin_group_count,
         "group_user_counts": group_user_counts,
+        "page": page,
+        "total_pages": total_pages,
+        "users_per_page": USERS_PER_PAGE,
+        "dashboard_text": DASHBOARD_TEXT,
     })
 
 
@@ -299,7 +315,8 @@ async def create_group(group_name: str = Form(...), current_user: models.User = 
 
 # Rename an existing group
 @app.post("/admin/rename_group")
-async def rename_group(group_id: int = Form(...), new_name: str = Form(...), current_user: models.User = Depends(get_current_user)):
+async def rename_group(group_id: int = Form(...), new_name: str = Form(...),
+                       current_user: models.User = Depends(get_current_user)):
     # Only administrators can rename groups
     if not await is_administrator(current_user):
         raise HTTPException(status_code=403, detail="Permission denied")
@@ -347,6 +364,36 @@ async def delete_user(username: str = Form(...), current_user: models.User = Dep
     except DoesNotExist:
         logger.warning(f"Attempted to delete non-existent user: {username}")
         raise HTTPException(status_code=404, detail="User not found")
+
+
+# Pydantic model for password change request
+class PasswordChangeRequest(BaseModel):
+    user_id: int
+    new_password: str
+
+
+# Route to change user's password
+@app.post("/admin/change_user_password", response_class=JSONResponse)
+async def change_user_password(
+        request: Request,
+        password_change: PasswordChangeRequest,
+        current_user: models.User = Depends(get_current_user)):
+    # Only administrators can change user passwords
+    if not await is_administrator(current_user):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    try:
+        user = await models.User.get(id=password_change.user_id)
+    except DoesNotExist:
+        return JSONResponse(content={"success": False, "error": "User not found"})
+
+    # Update the user's password
+    hashed_password = auth.get_password_hash(password_change.new_password)
+    user.hashed_password = hashed_password
+    await user.save()
+
+    logger.info(f"Password changed for user: {user.username} by admin: {current_user.username}")
+    return JSONResponse(content={"success": True})
 
 
 # Logout route
