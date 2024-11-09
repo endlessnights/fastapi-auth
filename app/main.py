@@ -40,6 +40,8 @@ async def lifespan(app: FastAPI):
         db_url=DB_URL,
         modules={"models": ["app.models"]}
     )
+    conn = Tortoise.get_connection("default")
+    await conn.execute_query("PRAGMA journal_mode=DELETE;")
     await Tortoise.generate_schemas()
 
     # Create default admin and administrators group
@@ -52,6 +54,33 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+# Check if the user is in a specified group
+async def is_user_in_group(user: models.User, group_name: str):
+    groups = await user.groups.all()
+    return any(group.name == group_name for group in groups)
+
+
+@app.get("/", response_class=HTMLResponse)
+async def home(
+        request: Request,
+        current_user: models.User = Depends(get_current_user)
+):
+    # Check if the user is in the "administrators" group
+    is_admin = await is_user_in_group(current_user, "administrators")
+    is_manager = await is_user_in_group(current_user, "managers")
+
+    user_group = "administrators" if is_admin else "managers" if is_manager else "Not authorized"
+
+    if not (is_admin or is_manager):
+        raise HTTPException(status_code=403, detail=f"Permission denied {user_group}")
+
+    # Return the static content if authorized
+    return templates.TemplateResponse("home.html", {
+        "request": request,
+        "user_group": user_group
+    })
 
 
 # Create default admin and administrators group
@@ -185,9 +214,9 @@ async def register(
 
 
 # Check if user is in "administrators" group
-async def is_administrator(user: models.User):
+async def is_administrator(user: models.User, group_name):
     groups = await user.groups.all()
-    return any(group.name == "administrators" for group in groups)
+    return any(group.name == group_name for group in groups)
 
 
 # Admin dashboard
@@ -199,7 +228,7 @@ async def admin_dashboard(
     logger.info(f"Fetching users for admin: {current_user.username} on page {page}")
 
     # Check if current_user is in "administrators" group
-    is_admin = await is_administrator(current_user)
+    is_admin = await is_administrator(current_user, "administrators")
 
     # Total number of users
     total_users = await models.User.all().count()
@@ -208,7 +237,8 @@ async def admin_dashboard(
     total_pages = ceil(total_users / USERS_PER_PAGE)
 
     # Fetch users for the current page
-    users = await models.User.all().prefetch_related("groups").order_by("username").offset((page - 1) * USERS_PER_PAGE).limit(USERS_PER_PAGE)
+    users = await models.User.all().prefetch_related("groups").order_by("username").offset(
+        (page - 1) * USERS_PER_PAGE).limit(USERS_PER_PAGE)
 
     # Fetch all groups
     groups = await models.Group.all().prefetch_related("users")
@@ -246,7 +276,7 @@ async def edit_user(
         full_name: str = Form(...),
         current_user: models.User = Depends(get_current_user)):
     # Only administrators can edit users
-    if not await is_administrator(current_user):
+    if not await is_administrator(current_user, "administrators"):
         raise HTTPException(status_code=403, detail="Permission denied")
     try:
         user = await models.User.get(username=username)
@@ -265,7 +295,7 @@ async def add_user_to_group(
         group_name: str = Form(...),
         current_user: models.User = Depends(get_current_user)):
     # Only administrators can add users to groups
-    if not await is_administrator(current_user):
+    if not await is_administrator(current_user, "administrators"):
         raise HTTPException(status_code=403, detail="Permission denied")
     try:
         user = await models.User.get(username=username)
@@ -283,7 +313,7 @@ async def remove_user_from_group(
         data: dict = Body(...),
         current_user: models.User = Depends(get_current_user)):
     # Only administrators can remove users from groups
-    if not await is_administrator(current_user):
+    if not await is_administrator(current_user, "administrators"):
         raise HTTPException(status_code=403, detail="Permission denied")
     username = data.get("username")
     group_name = data.get("group_name")
@@ -303,7 +333,7 @@ async def remove_user_from_group(
 @app.post("/admin/create_group")
 async def create_group(group_name: str = Form(...), current_user: models.User = Depends(get_current_user)):
     # Only administrators can create groups
-    if not await is_administrator(current_user):
+    if not await is_administrator(current_user, "administrators"):
         raise HTTPException(status_code=403, detail="Permission denied")
     group, created = await models.Group.get_or_create(name=group_name)
     if created:
@@ -318,7 +348,7 @@ async def create_group(group_name: str = Form(...), current_user: models.User = 
 async def rename_group(group_id: int = Form(...), new_name: str = Form(...),
                        current_user: models.User = Depends(get_current_user)):
     # Only administrators can rename groups
-    if not await is_administrator(current_user):
+    if not await is_administrator(current_user, "administrators"):
         raise HTTPException(status_code=403, detail="Permission denied")
     try:
         group = await models.Group.get(id=group_id)
@@ -330,26 +360,35 @@ async def rename_group(group_id: int = Form(...), new_name: str = Form(...),
         raise HTTPException(status_code=404, detail="Group not found")
 
 
-# Delete a group
+# Pydantic model for the request body
+class GroupDeleteRequest(BaseModel):
+    name: str
+
 @app.post("/admin/delete_group")
-async def delete_group(name: str = Body(...), current_user: models.User = Depends(get_current_user)):
+async def delete_group(
+    request: GroupDeleteRequest,
+    current_user: models.User = Depends(get_current_user)
+):
     # Only administrators can delete groups
-    if not await is_administrator(current_user):
+    if not await is_administrator(current_user, "administrators"):
         raise HTTPException(status_code=403, detail="Permission denied")
+
+    name = request.name
     try:
         group = await models.Group.get(name=name)
         await group.delete()
         logger.info(f"Group deleted: {name}")
         return JSONResponse(content={"success": True})
     except DoesNotExist:
-        return JSONResponse(content={"success": False, "error": "Group not found"})
+        logger.error(f"Group '{name}' not found")
+        return JSONResponse(content={"success": False, "error": f"Group '{name}' not found"})
 
 
 # Handle user deletion
 @app.post("/admin/delete_user")
 async def delete_user(username: str = Form(...), current_user: models.User = Depends(get_current_user)):
     # Only administrators can delete users
-    if not await is_administrator(current_user):
+    if not await is_administrator(current_user, "administrators"):
         raise HTTPException(status_code=403, detail="Permission denied")
     # Prevent admins from deleting themselves
     if username == current_user.username:
@@ -379,7 +418,7 @@ async def change_user_password(
         password_change: PasswordChangeRequest,
         current_user: models.User = Depends(get_current_user)):
     # Only administrators can change user passwords
-    if not await is_administrator(current_user):
+    if not await is_administrator(current_user, "administrators"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
     try:

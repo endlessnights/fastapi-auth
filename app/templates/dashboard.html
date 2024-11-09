@@ -206,25 +206,36 @@
 <!-- AJAX for Real-Time Updates -->
 <script>
     function deleteGroup(groupName) {
-        if (confirm(`Are you sure you want to delete the group: ${groupName}?`)) {
-            fetch(`/admin/delete_group`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ name: groupName })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    UIkit.notification({message: 'Group deleted successfully!', status: 'success'});
-                    location.reload();  // Reload the page to update groups
-                } else {
-                    UIkit.notification({message: 'Failed to delete group: ' + data.error, status: 'danger'});
-                }
-            });
-        }
+    // Ensure groupName is a string
+    if (typeof groupName !== 'string' || groupName.trim() === '') {
+        console.error("Invalid group name:", groupName);
+        UIkit.notification({ message: 'Invalid group name', status: 'danger' });
+        return;
     }
+
+    if (confirm(`Are you sure you want to delete the group: ${groupName}?`)) {
+        fetch(`/admin/delete_group`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ name: groupName })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                UIkit.notification({ message: 'Group deleted successfully!', status: 'success' });
+                location.reload();  // Reload the page to update groups
+            } else {
+                UIkit.notification({ message: 'Failed to delete group: ' + (data.error || 'Unknown error'), status: 'danger' });
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            UIkit.notification({ message: 'Failed to delete group: ' + error, status: 'danger' });
+        });
+    }
+}
 
     function removeUserFromGroup(username, groupName) {
         if (confirm(`Remove ${username} from group ${groupName}?`)) {

@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+    <html>
+    <head>
+        <title>Home</title>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.16.6/dist/css/uikit.min.css" />
+    </head>
+    <body>
+        <div class="uk-container uk-margin-top">
+            <h1>Welcome to Our Static Page</h1>
+            <p>This is some static content available at the root URL.</p>
+            <p>Group: {{user_group}}</p>
+            {% if user_group == "Managers" %}managers{% else %}administrators{% endif %}
+        </div>
+        <script src="https://cdn.jsdelivr.net/npm/uikit@3.16.6/dist/js/uikit.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/uikit@3.16.6/dist/js/uikit-icons.min.js"></script>
+    </body>
+    </html>
